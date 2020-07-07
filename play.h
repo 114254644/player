@@ -2,7 +2,7 @@
 #define __DEF_PLAY_H__
 
 #include <mutex>
-
+#include "decode.h"
 struct AVPacket;
 struct AVFormatContext;
 using auto_lock = std::lock_guard<std::mutex>;
@@ -48,6 +48,7 @@ protected:
     play_type           _type;
 
 private:
+    decode              _decode;
     std::mutex          _mtx;
     AVFormatContext*    _fmt;
 }
