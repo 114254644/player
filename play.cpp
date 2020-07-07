@@ -19,14 +19,15 @@ play::~play()
 //打开
 bool    play::open(AVFormatContext* fmt)
 {
-    //::TODO
-    return true;
+    if(!fmt)
+        return false;
+    return decode_init((AVMediaType)_type, fmt, &_decode);
 }
 
 //关闭
 void    playc::close()
 {
-    //::TODO
+    decode_free(&_decode);
 }
 
 //暂停
