@@ -20,6 +20,7 @@ public:
 public:
     explicit play(int type);
     virtual ~play();
+
 public:
     //打开
     bool    open(AVFormatContext* fmt);
@@ -41,14 +42,17 @@ public:
     void    flush_packets();
 
 protected:
+    //初始化
+    virtual void init();
+protected:
     int                 _volume;
     double              _clock;
     bool                _paused;
     bool                _stoped;
+    decode              _decode;
     play_type           _type;
 
 private:
-    decode              _decode;
     std::mutex          _mtx;
     AVFormatContext*    _fmt;
 }
