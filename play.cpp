@@ -16,16 +16,34 @@ play::~play()
 
 }
 
+//创建
+bool    play::create()
+{
+    return false;
+}
+//销毁
+void    play::destroy()
+{
+
+}
+
 //打开
 bool    play::open(AVFormatContext* fmt)
 {
     if(!fmt)
         return false;
-    return decode_init((AVMediaType)_type, fmt, &_decode);
+
+    if(decode_init((AVMediaType)_type, fmt, &_decode))
+    {
+        init();
+        return true;
+    }
+
+    return fasle;
 }
 
 //关闭
-void    playc::close()
+void    play::close()
 {
     decode_free(&_decode);
 }
@@ -72,4 +90,10 @@ void    play::push_packet(AVPacket* pkt)
 void    play::flush_packets()
 {
     //::TODO
+}
+
+//初始化
+void    play::init()
+{
+
 }
