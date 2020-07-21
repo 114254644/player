@@ -6,10 +6,16 @@ struct decode
 {
     bool                hw;
     AVMediaType         type;
+    AVPixelFormat       hw_format;
     AVFrame*            frame;
+    AVFrame*            in_frame;
+    AVFrame*            sw_frame;
+    AVFrame*            hw_frame;
+    AVBufferRef*        hw_ctx;
     AVStream*           stream;
     AVCodec*            codec;
     AVCodecContext*     decoder;
+
 public:
     decode()
     {
