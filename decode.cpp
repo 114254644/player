@@ -1,5 +1,60 @@
 #include "decode.h"
 
+#if LIBAVCODEC_VERSION_INT > AV_VERSION_INT(58, 4, 100)
+#define USE_NEW_HARDWARE_CODEC_METHOD
+#endif
+
+#ifdef USE_NEW_HARDWARE_CODEC_METHOD
+enum AVHWDeviceType hw_priority[] = {
+    AV_HWDEVICE_TYPE_D3D11VA, AV_HWDEVICE_TYPE_DXVA2,
+    AV_HWDEVICE_TYPE_VAAPI,   AV_HWDEVICE_TYPE_VDPAU,
+    AV_HWDEVICE_TYPE_QSV,     AV_HWDEVICE_TYPE_NONE,
+};
+
+static bool has_hw_type(AVCodec *c, enum AVHWDeviceType type,
+            enum AVPixelFormat *hw_format)
+{
+    for (int i = 0;; i++) {
+        const AVCodecHWConfig *config = avcodec_get_hw_config(c, i);
+        if (!config) {
+            break;
+        }
+
+        if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
+            config->device_type == type) {
+            *hw_format = config->pix_fmt;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void init_hw_decoder(decode *d, AVCodecContext *c)
+{
+    enum AVHWDeviceType *priority = hw_priority;
+    AVBufferRef *hw_ctx = NULL;
+
+    while (*priority != AV_HWDEVICE_TYPE_NONE) {
+        if (has_hw_type(d->codec, *priority, &d->hw_format)) {
+            int ret = av_hwdevice_ctx_create(&hw_ctx, *priority,
+                             NULL, NULL, 0);
+            if (ret == 0)
+                break;
+        }
+
+        priority++;
+    }
+
+    if (hw_ctx) {
+        c->hw_device_ctx = av_buffer_ref(hw_ctx);
+        c->opaque = d;
+        d->hw_ctx = hw_ctx;
+        d->hw = true;
+    }
+}
+#endif
+
 static int open_codec(decode *d, bool hw)
 {
     AVCodecContext *c;
@@ -18,8 +73,8 @@ static int open_codec(decode *d, bool hw)
     #endif
         d->hw = false;
     #ifdef USE_NEW_HARDWARE_CODEC_METHOD
-//        if (hw)
-//            init_hw_decoder(d, c);
+        if (hw)
+            init_hw_decoder(d, c);
     #endif
 
         if (c->thread_count == 1 && c->codec_id != AV_CODEC_ID_PNG &&
@@ -61,6 +116,16 @@ bool decode_init(AVMediaType type, AVFormatContext* fmt, decode* dec)
 #else
     id = stream->codec->codec_id;
 #endif
+    if (id == AV_CODEC_ID_VP8 || id == AV_CODEC_ID_VP9)
+    {
+        AVDictionaryEntry *tag = NULL;
+        tag = av_dict_get(stream->metadata, "alpha_mode", tag, AV_DICT_IGNORE_SUFFIX);
+        if (tag && strcmp(tag->value, "1") == 0)
+        {
+            char *codec = (id == AV_CODEC_ID_VP8) ? "libvpx" : "libvpx-vp9";
+            dec->codec = avcodec_find_decoder_by_name(codec);
+        }
+    }
     if (!dec->codec)
         dec->codec = avcodec_find_decoder(id);
 
@@ -71,7 +136,20 @@ bool decode_init(AVMediaType type, AVFormatContext* fmt, decode* dec)
     if (ret < 0)
         return false;
 
-    dec->frame = av_frame_alloc();
+   dec->sw_frame = av_frame_alloc();
+   if (!d->sw_frame)
+        return false;
+   if (dec->hw) {
+          dec->hw_frame = av_frame_alloc();
+           if (!dec->hw_frame) {
+               return false;
+           }
+
+           dec->in_frame = dec->hw_frame;
+       } else {
+           dec->in_frame = dec->sw_frame;
+       }
+
     if (dec->codec->capabilities & CODEC_CAP_TRUNC)
         dec->decoder->flags |= CODEC_FLAG_TRUNC;
     return true;
@@ -146,5 +224,20 @@ int decode_next(decode* dec, AVPacket* pkt, int *got_frame)
     }
 #endif
 
+#ifdef USE_NEW_HARDWARE_CODEC_METHOD
+    if (*got_frame && dec->hw) {
+        if (dec->hw_frame->format != dec->hw_format) {
+            dec->frame = dec->hw_frame;
+            return ret;
+        }
+
+        int err = av_hwframe_transfer_data(dec->sw_frame, dec->hw_frame, 0);
+        if (err != 0) {
+            ret = 0;
+            *got_frame = false;
+        }
+    }
+#endif
+    dec->frame = dec->sw_frame;
     return ret;
 }
